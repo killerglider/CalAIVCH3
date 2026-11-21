@@ -9,13 +9,19 @@ import type { Tool } from "@anthropic-ai/sdk/resources/messages/messages";
 const useBearer = process.env.ANTHROPIC_AUTH_SCHEME === "bearer";
 
 /**
+ * The SDK appends /v1/messages itself, so a base URL already ending in /v1
+ * (common for routers) would become /v1/v1/messages. Accept either form.
+ */
+const baseURL = process.env.ANTHROPIC_BASE_URL?.replace(/\/+$/, "").replace(/\/v1$/, "") || undefined;
+
+/**
  * Singleton client. The key is validated when a request is made.
  * ANTHROPIC_BASE_URL points it at a router (undefined = SDK default).
  * ANTHROPIC_AUTH_SCHEME=bearer sends the key as `Authorization: Bearer ...`
  * instead of `x-api-key`; apiKey is nulled so only one auth header is sent.
  */
 export const anthropic = new Anthropic({
-  baseURL: process.env.ANTHROPIC_BASE_URL,
+  baseURL,
   ...(useBearer
     ? { apiKey: null, authToken: process.env.ANTHROPIC_API_KEY }
     : { apiKey: process.env.ANTHROPIC_API_KEY }),

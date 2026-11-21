@@ -22,6 +22,8 @@ export type QuoteFlag =
 export interface RawQuoteLine {
   vendor: string | null;
   item_label: string;
+  /** Short printed heading without the spec paragraph; used only for matching. */
+  item_heading: string | null;
   uom_original: string;
   qty_original: number | null;
   rate_original: number | null;
@@ -80,6 +82,7 @@ export function parseRawExtraction(input: unknown): RawExtraction {
     return {
       vendor: toStr(l.vendor),
       item_label: label,
+      item_heading: toStr(l.item_heading),
       uom_original: toStr(l.uom_original) ?? "",
       qty_original: toNum(l.qty_original),
       rate_original: toNum(l.rate_original),
@@ -98,21 +101,68 @@ type UomKind = "SQFT" | "SQM" | "OTHER";
 
 function classifyUom(uom: string): UomKind {
   const u = uom.trim().toLowerCase().replace(/[\s.]/g, "");
-  if (["sqft", "sft", "sqfeet", "sqfoot"].includes(u)) return "SQFT";
+  // "soft" is a common OCR misread of "sqft" on scans.
+  if (["sqft", "sft", "soft", "sqfeet", "sqfoot"].includes(u)) return "SQFT";
   if (["sqm", "sqmt", "sqmtr", "sqmtrs", "sqmeter", "sqmetre", "m2", "m²"].includes(u)) {
     return "SQM";
   }
   return "OTHER";
 }
 
-/** Picks one vendor name per file: supplied, else the most common printed one. */
-export function resolveVendor(lines: RawQuoteLine[], supplied?: string): string {
+/** "Quotation_Shyama.pdf" -> "Shyama". Last-resort hint when no letterhead is printed. */
+export function vendorHintFromFile(sourceFile: string): string | null {
+  // Separators first: "_" is a word character and would hide the \b below.
+  const stem = sourceFile
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(/[_\-.]+/g, " ")
+    .replace(/\b(quotation|quote|quotations|rfq|offer)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return stem || null;
+}
+
+const vendorKey = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/**
+ * Maps an inferred vendor name onto an existing vendor so quotes join to the
+ * seeded performance data ("Purvyakruti Sales & Services Pvt. Ltd." ->
+ * "Purvyakruti"). Exact match on letters/digits, else a single unambiguous
+ * containment match of at least 5 characters; otherwise the name is kept.
+ */
+export function canonicalVendor(name: string, known: string[]): string {
+  const key = vendorKey(name);
+  if (!key || name === UNKNOWN_VENDOR) return name;
+
+  const exact = known.find((k) => vendorKey(k) === key);
+  if (exact) return exact;
+
+  const partial = known.filter((k) => {
+    const kk = vendorKey(k);
+    return Math.min(kk.length, key.length) >= 5 && (kk.includes(key) || key.includes(kk));
+  });
+  return partial.length === 1 ? partial[0] : name;
+}
+
+/** The text to match against the ERP list: the short heading, else a clipped label. */
+export function matchQueryFor(raw: RawQuoteLine): string {
+  return raw.item_heading ?? raw.item_label.slice(0, 160);
+}
+
+/**
+ * Picks one vendor name per file: supplied, else the most common printed one,
+ * else a hint taken from the file name.
+ */
+export function resolveVendor(
+  lines: RawQuoteLine[],
+  supplied?: string,
+  fileHint?: string | null,
+): string {
   if (supplied?.trim()) return supplied.trim();
   const counts = new Map<string, number>();
   for (const l of lines) {
     if (l.vendor) counts.set(l.vendor, (counts.get(l.vendor) ?? 0) + 1);
   }
-  let best = UNKNOWN_VENDOR;
+  let best = fileHint?.trim() || UNKNOWN_VENDOR;
   let bestCount = 0;
   counts.forEach((count, name) => {
     if (count > bestCount) {
@@ -191,30 +241,37 @@ function median(values: number[]): number {
 }
 
 /**
- * Flags "scope_mismatch" on lines whose qty_norm deviates more than 15% from
- * the median for their matched_item_code. A group needs at least two vendors,
+ * Flags "scope_mismatch" on every line of a vendor whose TOTAL qty_norm for a
+ * matched_item_code deviates more than 15% from the median vendor total for
+ * that code. Totals (not single lines) are compared because several distinct
+ * quote lines can map to one ERP code (e.g. balcony floor and wall); a per-line
+ * median would then compare unlike items. A code needs at least two vendors,
  * otherwise there is nothing to compare against.
  */
 export function flagScopeMismatch(lines: NormalizedQuoteLine[]): NormalizedQuoteLine[] {
-  const groups = new Map<string, { qtys: number[]; vendors: Set<string> }>();
+  // code -> vendor -> total qty_norm
+  const totals = new Map<string, Map<string, number>>();
 
   for (const l of lines) {
     if (!l.matched_item_code || l.qty_norm === null || l.qty_norm <= 0) continue;
-    const g = groups.get(l.matched_item_code) ?? { qtys: [], vendors: new Set() };
-    g.qtys.push(l.qty_norm);
-    g.vendors.add(l.vendor);
-    groups.set(l.matched_item_code, g);
+    const byVendor = totals.get(l.matched_item_code) ?? new Map<string, number>();
+    byVendor.set(l.vendor, (byVendor.get(l.vendor) ?? 0) + l.qty_norm);
+    totals.set(l.matched_item_code, byVendor);
   }
 
-  const medians = new Map<string, number>();
-  groups.forEach((g, code) => {
-    if (g.vendors.size >= 2) medians.set(code, median(g.qtys));
+  const outliers = new Set<string>(); // `${code}\u0000${vendor}`
+  totals.forEach((byVendor, code) => {
+    if (byVendor.size < 2) return;
+    const med = median(Array.from(byVendor.values()));
+    if (med <= 0) return;
+    byVendor.forEach((total, vendor) => {
+      if (Math.abs(total - med) / med > SCOPE_TOLERANCE) outliers.add(`${code}\u0000${vendor}`);
+    });
   });
 
-  return lines.map((l) => {
-    const med = l.matched_item_code ? medians.get(l.matched_item_code) : undefined;
-    if (med === undefined || med <= 0 || l.qty_norm === null) return l;
-    if (Math.abs(l.qty_norm - med) / med <= SCOPE_TOLERANCE) return l;
-    return { ...l, flags: [...l.flags, "scope_mismatch"] };
-  });
+  return lines.map((l) =>
+    l.matched_item_code && outliers.has(`${l.matched_item_code}\u0000${l.vendor}`)
+      ? { ...l, flags: [...l.flags, "scope_mismatch"] }
+      : l,
+  );
 }

@@ -4,10 +4,13 @@ import { extractJSON, readSamplePdfBase64 } from "@/lib/llm/anthropic";
 import { mockNormalizedQuoteLines } from "@/lib/mocks";
 import {
   acceptMatch,
+  canonicalVendor,
   flagScopeMismatch,
+  matchQueryFor,
   normalizeLine,
   parseRawExtraction,
   resolveVendor,
+  vendorHintFromFile,
 } from "@/lib/normalize";
 import { persistQuotes } from "@/lib/quotes-store";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -39,7 +42,9 @@ The document may be a scan; read it visually.
 Rules:
 - Return ONLY values exactly as printed. Do NOT compute, convert, total, round or normalise anything. Keep rates and quantities as printed and keep the printed unit of measure (e.g. "SQFT", "Sq.Ft", "SQM", "RMT", "Nos") in uom_original.
 - One entry per priced line item. Put the full item description, including relevant spec text, in item_label.
+- item_heading is ONLY the short heading of the item as printed (e.g. "WATERPROOFING AT TOILET FLOOR"), without the specification paragraph, method statement or scope notes that follow it. Copy it; do not paraphrase.
 - If a value is not printed, use null. Never guess a rate or quantity.
+- A rate cell that is blank, cropped, cut off or illegible is null. A stray or partial number near the table, or a figure that belongs to another row or column, is NOT a rate. Only use a rate you can read in that line's own RATE cell. Do not copy one line's rate onto other lines unless each line prints it.
 - freight, payment_terms and delivery_days are usually quote-level: repeat them on every line they apply to. delivery_days only if the delivery period is printed in days, otherwise null.
 - gst_pct is the percentage number (18, not 0.18).
 - vendor is the quoting company from the letterhead.
@@ -60,6 +65,7 @@ const EXTRACT_TOOL = {
           properties: {
             vendor: { type: ["string", "null"] },
             item_label: { type: "string" },
+            item_heading: { type: ["string", "null"] },
             uom_original: { type: ["string", "null"] },
             qty_original: { type: ["number", "null"] },
             rate_original: { type: ["number", "null"] },
@@ -158,11 +164,30 @@ async function parseRequest(req: Request): Promise<ParsedRequest | null> {
   return null;
 }
 
+interface ExtractedLine {
+  line: NormalizedQuoteLine;
+  /** What to match against the ERP list (short heading, not the spec paragraph). */
+  matchQuery: string;
+}
+
+/** Existing vendor names, to map inferred letterhead names onto. Best effort. */
+async function loadKnownVendors(): Promise<string[]> {
+  try {
+    const { data, error } = await supabaseServer.from("vendors").select("name");
+    if (error) throw error;
+    return ((data ?? []) as { name: string }[]).map((v) => v.name);
+  } catch (err) {
+    console.error("[normalize] loading vendors failed:", err);
+    return [];
+  }
+}
+
 /** One LLM call per PDF; everything after extraction is deterministic. */
 async function extractFile(
   input: QuoteInput,
+  knownVendors: string[],
   suppliedVendor?: string,
-): Promise<NormalizedQuoteLine[]> {
+): Promise<ExtractedLine[]> {
   const raw = await extractJSON<unknown>({
     system: SYSTEM_PROMPT,
     userText: `Extract every line item from this quotation (${input.sourceFile}).`,
@@ -170,10 +195,14 @@ async function extractFile(
     tool: EXTRACT_TOOL,
   });
   const { lines, source_looks_scanned } = parseRawExtraction(raw);
-  const vendor = resolveVendor(lines, suppliedVendor);
-  return lines.map((l) =>
-    normalizeLine(l, { vendor, sourceFile: input.sourceFile, scanned: source_looks_scanned }),
+  const vendor = canonicalVendor(
+    resolveVendor(lines, suppliedVendor, vendorHintFromFile(input.sourceFile)),
+    knownVendors,
   );
+  return lines.map((l) => ({
+    line: normalizeLine(l, { vendor, sourceFile: input.sourceFile, scanned: source_looks_scanned }),
+    matchQuery: matchQueryFor(l),
+  }));
 }
 
 /**
@@ -208,12 +237,15 @@ export async function POST(req: Request): Promise<NextResponse<NormalizeResponse
       throw new BadRequestError("`vendor` can only be supplied with a single file.");
     }
 
-    const perFile = await Promise.all(parsed.inputs.map((i) => extractFile(i, parsed.vendor)));
-    const unmatched = perFile.flat();
+    const knownVendors = await loadKnownVendors();
+    const perFile = await Promise.all(
+      parsed.inputs.map((i) => extractFile(i, knownVendors, parsed.vendor)),
+    );
+    const extracted = perFile.flat();
 
-    const codes = await Promise.all(unmatched.map((l) => matchItemCode(l.item_label)));
-    const matched = unmatched.map((l, i) =>
-      codes[i] ? { ...l, matched_item_code: codes[i] } : l,
+    const codes = await Promise.all(extracted.map((e) => matchItemCode(e.matchQuery)));
+    const matched = extracted.map((e, i) =>
+      codes[i] ? { ...e.line, matched_item_code: codes[i] } : e.line,
     );
 
     const lines = flagScopeMismatch(matched);
