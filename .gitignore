@@ -1,0 +1,16 @@
+# dependencies and build output
+/node_modules
+/.next
+/out
+
+# local secrets
+.env.local
+.env*.local
+
+# confidential Vinayak source material
+/data/*
+!/data/.gitkeep
+
+# tooling
+*.tsbuildinfo
+.vercel
