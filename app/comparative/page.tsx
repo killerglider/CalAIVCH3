@@ -1,144 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { ComparativeStatement, Recommendation } from "@/lib/types";
+import { postJson } from "@/lib/api";
+import { ErrorState, LoadingState } from "@/components/LoadingState";
+import { WorkflowHeader } from "@/components/WorkflowHeader";
 
-import type {
-  ComparativeStatement,
-  Recommendation,
-} from "@/lib/types";
+const money = (value: number | null) => value == null ? "-" : `Rs ${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
 export default function ComparativePage() {
-  const [statement, setStatement] = useState<ComparativeStatement | null>(null);
-  const [recommendation, setRecommendation] =
-    useState<Recommendation | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    async function load() {
-      try {
-        const [statementResponse, recommendationResponse] = await Promise.all([
-          fetch("/api/comparative", {
-            method: "POST",
-            signal: controller.signal,
-          }),
-          fetch("/api/recommend", {
-            method: "POST",
-            signal: controller.signal,
-          }),
-        ]);
-
-        if (!statementResponse.ok || !recommendationResponse.ok) {
-          throw new Error("Unable to load the comparative statement");
-        }
-
-        setStatement(
-          (await statementResponse.json()) as ComparativeStatement,
-        );
-        setRecommendation(
-          (await recommendationResponse.json()) as Recommendation,
-        );
-      } catch (requestError) {
-        if (
-          requestError instanceof DOMException &&
-          requestError.name === "AbortError"
-        ) {
-          return;
-        }
-        setError(
-          requestError instanceof Error
-            ? requestError.message
-            : "Unable to load mock data",
-        );
-      }
-    }
-
-    void load();
-    return () => controller.abort();
-  }, []);
-
-  return (
-    <main className="page-shell">
-      <p className="eyebrow">Step 04 · Hero view</p>
-      <h1 className="mt-2 text-3xl font-bold text-slate-950">
-        Comparative statement
-      </h1>
-      <p className="mb-8 mt-3 max-w-2xl leading-7">
-        A common commercial view across normalized vendor quotes, with a
-        separate typed recommendation response.
-      </p>
-
-      {error ? (
-        <div className="card text-red-700">{error}</div>
-      ) : !statement ? (
-        <div className="card">Loading typed mocks…</div>
-      ) : (
-        <div className="space-y-6">
-          <section className="card overflow-hidden p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-950 text-slate-100">
-                  <tr>
-                    <th className="px-5 py-4 font-medium">Item</th>
-                    <th className="px-5 py-4 font-medium">Qty</th>
-                    {statement.items[0]?.vendor_rates.map((rate) => (
-                      <th
-                        key={rate.vendor}
-                        className="px-5 py-4 font-medium"
-                      >
-                        {rate.vendor}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {statement.items.map((item) => (
-                    <tr key={item.item_code} className="border-t border-slate-200">
-                      <td className="px-5 py-5">
-                        <strong className="block text-slate-950">
-                          {item.item_code}
-                        </strong>
-                        <span>{item.description}</span>
-                      </td>
-                      <td className="whitespace-nowrap px-5 py-5">
-                        {item.qty ?? "—"} {item.uom}
-                      </td>
-                      {item.vendor_rates.map((rate) => (
-                        <td key={rate.vendor} className="px-5 py-5">
-                          <strong className="text-slate-950">
-                            ₹
-                            {rate.unit_rate_norm?.toLocaleString("en-IN", {
-                              maximumFractionDigits: 2,
-                            }) ?? "—"}
-                          </strong>
-                          <span className="mt-1 block text-xs text-amber-700">
-                            {rate.flags.join(", ") || "No flags"}
-                          </span>
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          {recommendation && (
-            <section className="rounded-2xl bg-emerald-950 p-6 text-emerald-50 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-widest text-emerald-300">
-                Mock recommendation
-              </p>
-              <h2 className="mt-2 text-2xl font-semibold">
-                {recommendation.recommended_vendor}
-              </h2>
-              <p className="mt-3 max-w-3xl leading-7 text-emerald-100">
-                {recommendation.reasoning}
-              </p>
-            </section>
-          )}
-        </div>
-      )}
-    </main>
-  );
+  const [statement, setStatement] = useState<ComparativeStatement | null>(null); const [recommendation, setRecommendation] = useState<Recommendation | null>(null); const [error, setError] = useState<string | null>(null);
+  useEffect(() => { const controller = new AbortController(); Promise.all([postJson<ComparativeStatement>("/api/comparative", undefined, controller.signal), postJson<Recommendation>("/api/recommend", undefined, controller.signal)]).then(([nextStatement, nextRecommendation]) => { setStatement(nextStatement); setRecommendation(nextRecommendation); }).catch((requestError: unknown) => { if (requestError instanceof DOMException && requestError.name === "AbortError") return; setError(requestError instanceof Error ? requestError.message : "Unable to load the comparative statement"); }); return () => controller.abort(); }, []);
+  const vendors = useMemo(() => statement?.vendor_summary.slice().sort((a, b) => a.rank - b.rank) ?? [], [statement]);
+  return <main className="page-shell"><WorkflowHeader step="04" eyebrow="Decision office / Compare" title="Comparative statement" description="A common SQM basis across every quote layout, with scope differences surfaced before the HOD decision." meta="Amara Tower-2 / HOD review" />{error ? <ErrorState message={error} /> : !statement ? <LoadingState label="Building normalized comparison" /> : <div className="space-y-8">{recommendation && <section className="relative overflow-hidden bg-[#31525e] p-6 text-white sm:p-8"><div className="absolute right-0 top-0 h-full w-1/3 bg-gradient-to-l from-[#a7823a]/25 to-transparent" /><div className="relative grid gap-8 lg:grid-cols-[1fr_330px]"><div><div className="flex items-center gap-3"><span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#d0b355]">Recommendation</span><span className="h-px w-10 bg-[#a7823a]" /></div><h2 className="mt-5 text-3xl text-white sm:text-4xl">Recommend {recommendation.recommended_vendor}</h2><p className="mt-4 max-w-2xl text-sm leading-7 text-[#d8e0e2]">{recommendation.reasoning}</p></div><div className="border-l border-[#6d8993] pl-5"><p className="muted-label text-[#d0b355]">Decision caveats</p><ul className="mt-4 space-y-3 text-xs leading-5 text-[#d8e0e2]">{recommendation.caveats.map((caveat) => <li key={caveat} className="flex gap-2"><span className="text-[#d0b355]">!</span>{caveat}</li>)}</ul></div></div></section>}<section><div className="mb-4 flex items-end justify-between"><div><p className="eyebrow">Vendor ranking</p><h2 className="mt-2 text-2xl text-[#31525e]">Commercial fit and delivery signal</h2></div><span className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#8d9a9f]">Score out of 100</span></div><div className="grid gap-px border border-[#cbd4d6] bg-[#cbd4d6] sm:grid-cols-2 xl:grid-cols-4">{vendors.map((vendor) => <div key={vendor.vendor} className={`bg-[#fdfdfc] p-5 ${vendor.rank === 1 ? "border-t-2 border-[#a7823a]" : ""}`}><div className="flex items-start justify-between gap-3"><div><span className="font-mono text-xs text-[#a7823a]">0{vendor.rank}</span><p className="mt-3 font-serif text-xl text-[#31525e]">{vendor.vendor}</p></div><span className="font-serif text-2xl text-[#31525e]">{vendor.score}</span></div><div className="mt-5 grid grid-cols-2 gap-3 border-t border-[#e5e8e8] pt-4"><div><p className="muted-label">Rate index</p><p className="mt-2 text-sm font-bold text-[#31525e]">{vendor.rate_index}</p></div><div><p className="muted-label">Performance</p><p className="mt-2 text-sm font-bold text-[#31525e]">{vendor.performance_score}</p></div></div><p className="mt-4 text-xs leading-5 text-[#728188]">{vendor.notes}</p></div>)}</div></section><section className="luxury-panel overflow-hidden"><div className="flex flex-col gap-4 border-b border-[#cbd4d6] px-5 py-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Normalized rate matrix</p><h2 className="mt-2 text-2xl text-[#31525e]">Matched items by vendor</h2></div><div className="flex flex-wrap gap-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#728188]"><span className="flex items-center gap-2"><span className="h-2 w-2 bg-[#6c9687]" /> Lowest compliant</span><span className="flex items-center gap-2"><span className="h-2 w-2 bg-[#d0b355]" /> Scope mismatch</span><span>Converted to SQM</span></div></div><div className="overflow-x-auto"><table className="min-w-[820px] w-full text-left text-sm"><thead className="bg-[#f7f8f7] text-[10px] uppercase tracking-[0.16em] text-[#77868b]"><tr><th className="w-72 px-5 py-4 font-bold">Requirement item</th><th className="w-28 px-5 py-4 font-bold">Quantity</th>{vendors.map((vendor) => <th key={vendor.vendor} className="min-w-40 px-5 py-4 font-bold">{vendor.vendor}</th>)}</tr></thead><tbody>{statement.items.map((item) => { const compliant = item.vendor_rates.filter((rate) => !rate.flags.includes("scope_mismatch") && rate.unit_rate_norm != null).map((rate) => rate.unit_rate_norm as number); const allRates = item.vendor_rates.filter((rate) => rate.unit_rate_norm != null).map((rate) => rate.unit_rate_norm as number); const lowest = compliant.length ? Math.min(...compliant) : Math.min(...allRates); return <tr key={item.item_code} className="border-t border-[#e5e8e8] align-top"><td className="px-5 py-5"><span className="font-mono text-xs font-bold text-[#a7823a]">{item.item_code}</span><p className="mt-2 font-medium leading-5 text-[#31525e]">{item.description}</p></td><td className="whitespace-nowrap px-5 py-5 text-[#61747c]">{item.qty?.toLocaleString("en-IN") ?? "-"}<span className="ml-1 text-xs text-[#8d9a9f]">{item.uom}</span></td>{vendors.map((vendor) => { const rate = item.vendor_rates.find((entry) => entry.vendor === vendor.vendor); const isLowest = rate?.unit_rate_norm != null && rate.unit_rate_norm === lowest && !rate.flags.includes("scope_mismatch"); return <td key={vendor.vendor} className={`px-5 py-5 ${isLowest ? "bg-[#eef5f1]" : ""}`}><div className="flex items-start justify-between gap-3"><span className={`font-serif text-xl ${isLowest ? "text-[#587b70]" : "text-[#31525e]"}`}>{money(rate?.unit_rate_norm ?? null)}</span>{rate?.flags.includes("scope_mismatch") && <span className="border border-[#d9cba9] bg-[#fbf7ed] px-1.5 py-0.5 text-[10px] font-black text-[#a7823a]">!</span>}</div>{rate?.flags.includes("scope_mismatch") && <p className="mt-2 text-[11px] font-semibold leading-4 text-[#a7823a]">Scope differs from requirement</p>}{rate?.flags.includes("unit_converted") && <p className="mt-2 text-[11px] text-[#8d9a9f]">unit converted to SQM</p>}{rate?.unit_rate_norm == null && <p className="mt-2 text-[11px] text-[#8d9a9f]">No comparable rate</p>}</td>})}</tr>})}</tbody></table></div></section></div>}</main>;
 }

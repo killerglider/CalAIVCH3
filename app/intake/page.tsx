@@ -1,17 +1,25 @@
-import { ApiPreview } from "@/components/ApiPreview";
+"use client";
+
+import { useState } from "react";
+import type { Requirement, RequirementSource } from "@/lib/types";
+import { postJson } from "@/lib/api";
+import { ErrorState } from "@/components/LoadingState";
+import { WorkflowHeader } from "@/components/WorkflowHeader";
+
+type Tab = "form" | "whatsapp" | "voice";
 
 export default function IntakePage() {
-  return (
-    <main className="page-shell">
-      <p className="eyebrow">Step 01</p>
-      <h1 className="mt-2 text-3xl font-bold text-slate-950">
-        Requirement intake
-      </h1>
-      <p className="mb-8 mt-3 max-w-2xl leading-7">
-        Placeholder for form entry, WhatsApp ingestion, and voice
-        transcription. The response below is the shared Requirement contract.
-      </p>
-      <ApiPreview endpoint="/api/intake" title="Captured requirement" />
-    </main>
-  );
+  const [tab, setTab] = useState<Tab>("form");
+  const [project, setProject] = useState("Amara Tower-2");
+  const [description, setDescription] = useState("Waterproofing at toilet floor");
+  const [qty, setQty] = useState("1247");
+  const [uom, setUom] = useState("SQM");
+  const [rawText, setRawText] = useState("Need waterproofing at toilet floor for Amara Tower-2. Quantity 1247 SQM. Please initiate RFQ.");
+  const [requirement, setRequirement] = useState<Requirement | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function submit(source: RequirementSource, body?: unknown) { setLoading(true); setError(null); try { setRequirement(await postJson<Requirement>("/api/intake", body)); } catch (e) { setError(e instanceof Error ? e.message : "Unable to capture requirement"); } finally { setLoading(false); } }
+
+  return <main className="page-shell"><WorkflowHeader step="01" eyebrow="Site request / Capture" title="Requirement intake" description="Bring the request into a structured record before the catalogue and commercial review begin." meta="Amara Tower-2 / New request" /><div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_390px]"><section className="luxury-panel overflow-hidden"><div className="border-b border-[#cbd4d6] px-5 py-4"><p className="eyebrow">Choose a source</p><div className="tab-rail -mx-5 mt-3">{([ ["form", "Structured form"], ["whatsapp", "WhatsApp text"], ["voice", "Voice note"] ] as [Tab, string][]).map(([value, label]) => <button key={value} type="button" className={tab === value ? "active" : ""} onClick={() => setTab(value)}>{label}</button>)}</div></div>{tab === "form" && <form className="space-y-6 p-6 sm:p-8" onSubmit={(e) => { e.preventDefault(); void submit("form", { project, description, qty: Number(qty), uom }); }}><div><label className="muted-label" htmlFor="project">Project / site</label><input id="project" className="field mt-2" value={project} onChange={(e) => setProject(e.target.value)} /></div><div><label className="muted-label" htmlFor="description">Work requirement</label><textarea id="description" className="field mt-2 min-h-32 resize-y" value={description} onChange={(e) => setDescription(e.target.value)} /></div><div className="grid gap-5 sm:grid-cols-2"><div><label className="muted-label" htmlFor="qty">Quantity</label><input id="qty" className="field mt-2" type="number" value={qty} onChange={(e) => setQty(e.target.value)} /></div><div><label className="muted-label" htmlFor="uom">Unit of measure</label><select id="uom" className="field mt-2" value={uom} onChange={(e) => setUom(e.target.value)}><option>SQM</option><option>RM</option><option>Nos</option></select></div></div><button disabled={loading} className="gold-button">{loading ? "Parsing requirement..." : "Capture requirement"}<span className="text-base text-[#d0b355]">-&gt;</span></button></form>}{tab === "whatsapp" && <form className="space-y-6 p-6 sm:p-8" onSubmit={(e) => { e.preventDefault(); void submit("whatsapp", { text: rawText }); }}><div><label className="muted-label" htmlFor="whatsapp">Paste site message</label><textarea id="whatsapp" className="field mt-2 min-h-56 resize-y leading-6" value={rawText} onChange={(e) => setRawText(e.target.value)} /></div><div className="border-l-2 border-[#a7823a] bg-[#f7f8f7] p-4 text-xs leading-5 text-[#728188]">The parser extracts project, quantities, units, and work descriptions from the message.</div><button disabled={loading} className="gold-button">{loading ? "Parsing message..." : "Parse WhatsApp message"}<span className="text-base text-[#d0b355]">-&gt;</span></button></form>}{tab === "voice" && <form className="space-y-6 p-6 sm:p-8" onSubmit={(e) => { e.preventDefault(); const form = new FormData(e.currentTarget); void submit("voice", form); }}><div className="border border-dashed border-[#aebdc1] bg-[#f7f8f7] p-10 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center border border-[#a7823a] font-serif text-xl text-[#a7823a]">V</div><p className="mt-4 font-serif text-xl text-[#31525e]">Upload a site voice note</p><p className="mt-2 text-xs text-[#77868b]">MP3, M4A, WAV up to 25 MB</p><input name="file" className="mt-6 block w-full text-sm text-[#728188] file:mr-3 file:border-0 file:bg-[#31525e] file:px-3 file:py-2 file:text-xs file:font-bold file:uppercase file:tracking-[0.12em] file:text-white" type="file" accept="audio/*" /></div><button disabled={loading} className="gold-button">{loading ? "Transcribing..." : "Transcribe and capture"}<span className="text-base text-[#d0b355]">-&gt;</span></button></form>}</section><aside className="space-y-5">{error && <ErrorState message={error} />}{requirement ? <section className="luxury-panel p-6"><div className="flex items-center justify-between"><p className="eyebrow">Parsed successfully</p><span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#a7823a]">{requirement.source}</span></div><h2 className="mt-4 text-2xl text-[#31525e]">{requirement.project}</h2><p className="mt-2 text-xs text-[#8d9a9f]">Captured {new Date(requirement.created_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</p><div className="mt-6 space-y-3">{requirement.lines.map((line) => <div key={line.id} className="data-rule pt-4"><div className="flex justify-between gap-3"><p className="text-sm font-medium text-[#31525e]">{line.description}</p><span className="whitespace-nowrap text-sm font-semibold text-[#4d5a5f]">{line.qty ?? "-"} {line.uom}</span></div>{line.wo_code && <p className="mt-2 font-mono text-xs text-[#a7823a]">WO {line.wo_code}</p>}</div>)}</div></section> : <section className="luxury-panel p-6"><p className="eyebrow">Next in workflow</p><p className="mt-4 text-xl text-[#31525e]">Match each parsed line to the ERP catalogue.</p><p className="mt-3 text-sm leading-6 text-[#728188]">Duplicate variants and new-code suggestions appear in the next review screen.</p><div className="mt-8 border-t border-[#cbd4d6] pt-4 text-[10px] font-bold uppercase tracking-[0.18em] text-[#a7823a]">Capture / 01</div></section>}</aside></div></main>;
 }
