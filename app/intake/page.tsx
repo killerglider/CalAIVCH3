@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
 import type { Requirement } from "@/lib/types";
 import { postJson } from "@/lib/api";
@@ -12,6 +13,7 @@ type Tab = "form" | "whatsapp" | "voice";
 const sampleTranscript = "Amara Tower-2 waterproofing. Toilet floor, WP.01, quantity 1247 square metres. Please invite vendors and begin in November.";
 
 export default function IntakePage() {
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>("form");
   const [project, setProject] = useState("Amara Tower-2");
   const [description, setDescription] = useState("Waterproofing at toilet floor");
@@ -31,6 +33,7 @@ export default function IntakePage() {
       setRequirement(result);
       setActiveRequirementId(result.id);
       if (result.source === "voice") setTranscript(result.raw_text);
+      window.setTimeout(() => router.push("/match"), 900);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to capture requirement");
     } finally {
