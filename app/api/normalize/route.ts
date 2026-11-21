@@ -14,6 +14,8 @@ import {
   vendorHintFromFile,
 } from "@/lib/normalize";
 import { persistQuotes } from "@/lib/quotes-store";
+import type { NormalizationEvent } from "@/lib/normalization-events";
+import { listQuotes } from "@/lib/server/comparative";
 import { supabaseServer } from "@/lib/supabase/server";
 import type { NormalizedQuoteLine } from "@/lib/types";
 
@@ -154,11 +156,12 @@ async function parseRequest(req: Request): Promise<ParsedRequest | null> {
         names.push(n);
       }
     }
-    if (names.length === 0) return null;
+    const requirementId = checkRequirementId(body.requirement_id);
+    if (names.length === 0 && !requirementId) return null;
     return {
       inputs: await Promise.all(names.map(loadSample)),
       vendor: typeof body.vendor === "string" ? body.vendor : undefined,
-      requirementId: checkRequirementId(body.requirement_id),
+      requirementId,
     };
   }
 
@@ -224,9 +227,56 @@ async function matchItemCode(itemLabel: string): Promise<string | undefined> {
   }
 }
 
-type NormalizeResponse = NormalizedQuoteLine[] | { error: string; name: string };
+async function normalize(parsed: ParsedRequest, report?: (event: NormalizationEvent) => void) {
+  const fileCount = parsed.inputs.length;
+  let completed = 0;
+  const progress = (label: string) => report?.({ type: "progress", completed, total: fileCount + 2, label });
+  progress("Reading vendor quotations");
+  const vendors = await loadKnownVendors();
+  const perFile = await Promise.all(parsed.inputs.map(async (input) => {
+    const lines = await extractFile(input, vendors, parsed.vendor);
+    completed++;
+    progress(completed === fileCount ? "Matching ERP codes" : `Read ${completed} of ${fileCount} quotations`);
+    return lines;
+  }));
+  const extracted = perFile.flat();
+  const queries = Array.from(new Set(extracted.map((entry) => entry.matchQuery)));
+  const codes = new Map(await Promise.all(queries.map(async (query) => [query, await matchItemCode(query)] as const)));
+  const matched = extracted.map(({ line, matchQuery }) => {
+    const code = codes.get(matchQuery);
+    return code ? { ...line, matched_item_code: code } : line;
+  });
+  const lines = applyRateReliabilityGuard(flagScopeMismatch(matched));
+  completed++;
+  progress("Saving normalized quotes");
+  const persisted = await persistQuotes(lines, parsed.requirementId);
+  return { lines, persisted };
+}
 
-export async function POST(req: Request): Promise<NextResponse<NormalizeResponse>> {
+function streamNormalization(parsed: ParsedRequest): Response {
+  const encoder = new TextEncoder();
+  let disconnected = false;
+  const body = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const emit = (event: NormalizationEvent) => {
+        if (!disconnected) controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
+      };
+      try {
+        const { lines, persisted } = await normalize(parsed, emit);
+        if (!persisted) throw new Error("Could not save the normalized quotes. Please retry.");
+        emit({ type: "done", lines });
+      } catch (error) {
+        emit({ type: "error", error: error instanceof Error ? error.message : "Could not normalize quotes." });
+      } finally {
+        if (!disconnected) controller.close();
+      }
+    },
+    cancel() { disconnected = true; },
+  });
+  return new Response(body, { headers: { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store, no-transform", "X-Accel-Buffering": "no" } });
+}
+
+export async function POST(req: Request): Promise<Response> {
   try {
     const parsed = await parseRequest(req);
 
@@ -234,23 +284,15 @@ export async function POST(req: Request): Promise<NextResponse<NormalizeResponse
     if (!parsed) {
       return NextResponse.json(mockNormalizedQuoteLines, { headers: { "X-Mock": "true" } });
     }
+    if (parsed.requirementId && parsed.inputs.length === 0) {
+      return NextResponse.json(await listQuotes(parsed.requirementId));
+    }
     if (parsed.vendor && parsed.inputs.length > 1) {
       throw new BadRequestError("`vendor` can only be supplied with a single file.");
     }
 
-    const knownVendors = await loadKnownVendors();
-    const perFile = await Promise.all(
-      parsed.inputs.map((i) => extractFile(i, knownVendors, parsed.vendor)),
-    );
-    const extracted = perFile.flat();
-
-    const codes = await Promise.all(extracted.map((e) => matchItemCode(e.matchQuery)));
-    const matched = extracted.map((e, i) =>
-      codes[i] ? { ...e.line, matched_item_code: codes[i] } : e.line,
-    );
-
-    const lines = applyRateReliabilityGuard(flagScopeMismatch(matched));
-    const persisted = await persistQuotes(lines, parsed.requirementId);
+    if (req.headers.get("accept") === "application/x-ndjson") return streamNormalization(parsed);
+    const { lines, persisted } = await normalize(parsed);
 
     return NextResponse.json(lines, { headers: { "X-Quotes-Persisted": String(persisted) } });
   } catch (err) {

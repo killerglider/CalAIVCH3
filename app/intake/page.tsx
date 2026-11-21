@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { ContinueLink } from "@/components/ContinueLink";
 import type { FormEvent } from "react";
 import type { Requirement } from "@/lib/types";
 import { postJson } from "@/lib/api";
@@ -13,7 +13,6 @@ type Tab = "form" | "whatsapp" | "voice";
 const sampleTranscript = "Amara Tower-2 waterproofing. Toilet floor, WP.01, quantity 1247 square metres. Please invite vendors and begin in November.";
 
 export default function IntakePage() {
-  const router = useRouter();
   const [tab, setTab] = useState<Tab>("form");
   const [project, setProject] = useState("Amara Tower-2");
   const [description, setDescription] = useState("Waterproofing at toilet floor");
@@ -26,6 +25,7 @@ export default function IntakePage() {
   const [loading, setLoading] = useState(false);
 
   async function submit(body: BodyInit | object) {
+    setRequirement(null);
     setLoading(true);
     setError(null);
     try {
@@ -33,7 +33,6 @@ export default function IntakePage() {
       setRequirement(result);
       setActiveRequirementId(result.id);
       if (result.source === "voice") setTranscript(result.raw_text);
-      window.setTimeout(() => router.push("/match"), 900);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to capture requirement");
     } finally {
@@ -58,7 +57,7 @@ export default function IntakePage() {
         {tab === "whatsapp" && <form className="space-y-6 p-6 sm:p-8" onSubmit={(event) => { event.preventDefault(); void submit({ source: "whatsapp", project, raw_text: rawText }); }}><div><label className="muted-label" htmlFor="whatsapp">WhatsApp message</label><textarea id="whatsapp" className="field mt-2 min-h-56 resize-y leading-6" value={rawText} onChange={(event) => setRawText(event.target.value)} required /></div><button disabled={loading} className="gold-button">{loading ? "Parsing message..." : "Parse WhatsApp message"}<span className="text-base text-[#d0b355]">-&gt;</span></button></form>}
         {tab === "voice" && <form className="space-y-6 p-6 sm:p-8" onSubmit={onVoiceSubmit}><div className="border border-dashed border-[#aebdc1] bg-[#f7f8f7] p-8"><p className="font-serif text-xl text-[#31525e]">Voice note</p><p className="mt-2 text-xs text-[#77868b]">Upload audio or use the transcript field below.</p><input name="audio" className="mt-5 block w-full text-sm text-[#728188] file:mr-3 file:border-0 file:bg-[#31525e] file:px-3 file:py-2 file:text-xs file:font-bold file:uppercase file:tracking-[0.12em] file:text-white" type="file" accept="audio/*" /></div><div><div className="flex items-center justify-between gap-3"><label className="muted-label" htmlFor="transcript">Transcript fallback</label><button type="button" className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#a7823a]" onClick={() => setTranscript(sampleTranscript)}>Use sample</button></div><textarea id="transcript" className="field mt-2 min-h-32 resize-y leading-6" value={transcript} onChange={(event) => setTranscript(event.target.value)} placeholder="Paste or enter the voice note transcript" /></div><button disabled={loading} className="gold-button">{loading ? "Transcribing and parsing..." : "Transcribe and capture"}<span className="text-base text-[#d0b355]">-&gt;</span></button></form>}
       </section>
-      <aside className="space-y-5">{error && <ErrorState message={error} />}{requirement ? <section className="luxury-panel p-6"><div className="flex items-center justify-between"><p className="eyebrow">Requirement captured</p><span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#a7823a]">{requirement.source}</span></div><h2 className="mt-4 text-2xl text-[#31525e]">{requirement.project}</h2><p className="mt-2 text-xs text-[#8d9a9f]">Reference {requirement.id}</p>{requirement.source === "voice" && <div className="mt-5 border-l-2 border-[#a7823a] bg-[#f7f8f7] p-3"><p className="muted-label">Transcript</p><p className="mt-2 text-xs leading-5 text-[#61747c]">{requirement.raw_text}</p></div>}<div className="mt-5 overflow-x-auto"><table className="w-full text-left text-xs"><thead className="border-y border-[#d7dcdd] text-[9px] uppercase tracking-[0.13em] text-[#77868b]"><tr><th className="py-3 pr-3">Description</th><th className="py-3 pr-3">Unit</th><th className="py-3 pr-3">Qty</th><th className="py-3">WO code</th></tr></thead><tbody>{requirement.lines.map((line) => <tr key={line.id} className="border-b border-[#e5e8e8] align-top"><td className="py-3 pr-3 text-[#31525e]">{line.description}</td><td className="py-3 pr-3">{line.uom}</td><td className="py-3 pr-3">{line.qty ?? "—"}</td><td className="py-3 font-mono text-[#a7823a]">{line.wo_code ?? "—"}</td></tr>)}</tbody></table></div></section> : <section className="luxury-panel p-6"><p className="eyebrow">Next in workflow</p><p className="mt-4 text-xl text-[#31525e]">Match each parsed line to the ERP catalogue.</p><p className="mt-3 text-sm leading-6 text-[#728188]">The captured requirement ID will carry through to matching, quote normalization, and the demo pipeline.</p></section>}</aside>
+      <aside className="space-y-5">{error && <ErrorState message={error} />}{requirement ? <section className="luxury-panel p-6"><div className="flex items-center justify-between"><p className="eyebrow">Requirement captured</p><span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#a7823a]">{requirement.source}</span></div><h2 className="mt-4 text-2xl text-[#31525e]">{requirement.project}</h2><p className="mt-2 text-xs text-[#8d9a9f]">Reference {requirement.id}</p>{requirement.source === "voice" && <div className="mt-5 border-l-2 border-[#a7823a] bg-[#f7f8f7] p-3"><p className="muted-label">Transcript</p><p className="mt-2 text-xs leading-5 text-[#61747c]">{requirement.raw_text}</p></div>}<div className="mt-5 overflow-x-auto"><table className="w-full text-left text-xs"><thead className="border-y border-[#d7dcdd] text-[9px] uppercase tracking-[0.13em] text-[#77868b]"><tr><th className="py-3 pr-3">Description</th><th className="py-3 pr-3">Unit</th><th className="py-3 pr-3">Qty</th><th className="py-3">WO code</th></tr></thead><tbody>{requirement.lines.map((line) => <tr key={line.id} className="border-b border-[#e5e8e8] align-top"><td className="py-3 pr-3 text-[#31525e]">{line.description}</td><td className="py-3 pr-3">{line.uom}</td><td className="py-3 pr-3">{line.qty ?? "—"}</td><td className="py-3 font-mono text-[#a7823a]">{line.wo_code ?? "—"}</td></tr>)}</tbody></table></div><ContinueLink href="/match" label="Match" /></section> : <section className="luxury-panel p-6"><p className="eyebrow">Next in workflow</p><p className="mt-4 text-xl text-[#31525e]">Match each parsed line to the ERP catalogue.</p><p className="mt-3 text-sm leading-6 text-[#728188]">The captured requirement ID will carry through to matching, quote normalization, and the demo pipeline.</p></section>}</aside>
     </div>
   </main>;
 }

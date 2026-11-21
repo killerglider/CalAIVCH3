@@ -47,7 +47,7 @@ function rowToLine(r: QuoteRow): NormalizedQuoteLine {
 }
 
 /** The requirement's persisted, already-normalised quote lines. */
-export async function loadQuotes(requirementId: string): Promise<NormalizedQuoteLine[]> {
+export async function listQuotes(requirementId: string): Promise<NormalizedQuoteLine[]> {
   const { data, error } = await supabaseServer
     .from("quotes")
     .select(
@@ -57,8 +57,13 @@ export async function loadQuotes(requirementId: string): Promise<NormalizedQuote
     .order("id", { ascending: true });
   if (error) throw error;
   const rows = (data ?? []) as QuoteRow[];
-  if (rows.length === 0) throw new InputError("No quotes found for that requirement_id.");
   return rows.map(rowToLine);
+}
+
+export async function loadQuotes(requirementId: string): Promise<NormalizedQuoteLine[]> {
+  const quotes = await listQuotes(requirementId);
+  if (!quotes.length) throw new InputError("No quotes found for that requirement_id.");
+  return quotes;
 }
 
 async function loadVendors(): Promise<Vendor[]> {
