@@ -1,0 +1,220 @@
+import type { NormalizedQuoteLine } from "@/lib/types";
+
+/** Deterministic quote normalisation. No LLM and no I/O in this module. */
+
+export const SQFT_TO_SQM = 0.092903;
+export const SQFT_RATE_TO_SQM_RATE = 10.76391;
+export const SCOPE_TOLERANCE = 0.15;
+export const LOW_CONFIDENCE = 0.7;
+export const MIN_MATCH_SCORE = 0.3;
+export const UNKNOWN_VENDOR = "Unknown vendor";
+
+/** Flag vocabulary. "uom_unsupported" is an addition for non-area units. */
+export type QuoteFlag =
+  | "unit_converted"
+  | "scope_mismatch"
+  | "ocr_low_confidence"
+  | "missing_rate"
+  | "gst_extra"
+  | "uom_unsupported";
+
+/** One line exactly as printed on the quotation (model output, unconverted). */
+export interface RawQuoteLine {
+  vendor: string | null;
+  item_label: string;
+  uom_original: string;
+  qty_original: number | null;
+  rate_original: number | null;
+  gst_pct: number | null;
+  freight: number | null;
+  payment_terms: string | null;
+  delivery_days: number | null;
+  confidence: number;
+}
+
+export interface RawExtraction {
+  source_looks_scanned: boolean;
+  lines: RawQuoteLine[];
+}
+
+function toNum(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
+    const n = parseFloat(value.replace(/[,\s₹]/g, ""));
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function toStr(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function round(n: number, dp: number): number {
+  const f = 10 ** dp;
+  return Math.round(n * f) / f;
+}
+
+function clamp01(n: number | null): number {
+  return n === null ? 0 : Math.min(1, Math.max(0, n));
+}
+
+/** Guards and coerces the tool output. Throws on a malformed return. */
+export function parseRawExtraction(input: unknown): RawExtraction {
+  const obj = input as { lines?: unknown; source_looks_scanned?: unknown } | null;
+
+  if (!obj || !Array.isArray(obj.lines)) {
+    throw new Error("normalize: model returned malformed output (no `lines` array).");
+  }
+  if (obj.lines.length === 0) {
+    throw new Error("normalize: model extracted no line items from the PDF.");
+  }
+
+  const lines = obj.lines.map((item: unknown, i: number): RawQuoteLine => {
+    const l = item as Record<string, unknown> | null;
+    const label = toStr(l?.item_label);
+    if (!l || !label) {
+      throw new Error(`normalize: line ${i} has no item_label.`);
+    }
+    const days = toNum(l.delivery_days);
+    return {
+      vendor: toStr(l.vendor),
+      item_label: label,
+      uom_original: toStr(l.uom_original) ?? "",
+      qty_original: toNum(l.qty_original),
+      rate_original: toNum(l.rate_original),
+      gst_pct: toNum(l.gst_pct),
+      freight: toNum(l.freight),
+      payment_terms: toStr(l.payment_terms),
+      delivery_days: days === null ? null : Math.round(days),
+      confidence: clamp01(toNum(l.confidence)),
+    };
+  });
+
+  return { source_looks_scanned: obj.source_looks_scanned === true, lines };
+}
+
+type UomKind = "SQFT" | "SQM" | "OTHER";
+
+function classifyUom(uom: string): UomKind {
+  const u = uom.trim().toLowerCase().replace(/[\s.]/g, "");
+  if (["sqft", "sft", "sqfeet", "sqfoot"].includes(u)) return "SQFT";
+  if (["sqm", "sqmt", "sqmtr", "sqmtrs", "sqmeter", "sqmetre", "m2", "m²"].includes(u)) {
+    return "SQM";
+  }
+  return "OTHER";
+}
+
+/** Picks one vendor name per file: supplied, else the most common printed one. */
+export function resolveVendor(lines: RawQuoteLine[], supplied?: string): string {
+  if (supplied?.trim()) return supplied.trim();
+  const counts = new Map<string, number>();
+  for (const l of lines) {
+    if (l.vendor) counts.set(l.vendor, (counts.get(l.vendor) ?? 0) + 1);
+  }
+  let best = UNKNOWN_VENDOR;
+  let bestCount = 0;
+  counts.forEach((count, name) => {
+    if (count > bestCount) {
+      best = name;
+      bestCount = count;
+    }
+  });
+  return best;
+}
+
+export function normalizeLine(
+  raw: RawQuoteLine,
+  ctx: { vendor: string; sourceFile: string; scanned: boolean },
+): NormalizedQuoteLine {
+  const flags: QuoteFlag[] = [];
+  const kind = classifyUom(raw.uom_original);
+
+  let qty_norm: number | null = null;
+  let unit_rate_norm: number | null = null;
+
+  if (kind === "SQFT") {
+    qty_norm =
+      raw.qty_original === null ? null : round(raw.qty_original * SQFT_TO_SQM, 3);
+    unit_rate_norm =
+      raw.rate_original === null
+        ? null
+        : round(raw.rate_original * SQFT_RATE_TO_SQM_RATE, 2);
+    flags.push("unit_converted");
+  } else if (kind === "SQM") {
+    qty_norm = raw.qty_original;
+    unit_rate_norm = raw.rate_original;
+  } else {
+    // Cannot be expressed per SQM; never pass a non-area rate off as one.
+    flags.push("uom_unsupported");
+  }
+
+  if (ctx.scanned || raw.confidence < LOW_CONFIDENCE) flags.push("ocr_low_confidence");
+  if (raw.rate_original === null) flags.push("missing_rate");
+
+  return {
+    vendor: ctx.vendor,
+    source_file: ctx.sourceFile,
+    item_label: raw.item_label,
+    uom_original: raw.uom_original,
+    qty_original: raw.qty_original,
+    rate_original: raw.rate_original,
+    uom_norm: "SQM",
+    qty_norm,
+    unit_rate_norm,
+    gst_pct: raw.gst_pct,
+    freight: raw.freight,
+    payment_terms: raw.payment_terms,
+    delivery_days: raw.delivery_days,
+    confidence: raw.confidence,
+    flags,
+  };
+}
+
+/**
+ * Accepts the top match_item_code result only if it scores at least
+ * MIN_MATCH_SCORE. A rejected line has no matched_item_code, so
+ * flagScopeMismatch leaves it out of the median groups.
+ */
+export function acceptMatch(
+  top: { item_code?: unknown; score?: unknown } | undefined | null,
+): string | undefined {
+  if (!top || typeof top.item_code !== "string") return undefined;
+  const score = typeof top.score === "number" ? top.score : Number(top.score);
+  return Number.isFinite(score) && score >= MIN_MATCH_SCORE ? top.item_code : undefined;
+}
+
+function median(values: number[]): number {
+  const s = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+/**
+ * Flags "scope_mismatch" on lines whose qty_norm deviates more than 15% from
+ * the median for their matched_item_code. A group needs at least two vendors,
+ * otherwise there is nothing to compare against.
+ */
+export function flagScopeMismatch(lines: NormalizedQuoteLine[]): NormalizedQuoteLine[] {
+  const groups = new Map<string, { qtys: number[]; vendors: Set<string> }>();
+
+  for (const l of lines) {
+    if (!l.matched_item_code || l.qty_norm === null || l.qty_norm <= 0) continue;
+    const g = groups.get(l.matched_item_code) ?? { qtys: [], vendors: new Set() };
+    g.qtys.push(l.qty_norm);
+    g.vendors.add(l.vendor);
+    groups.set(l.matched_item_code, g);
+  }
+
+  const medians = new Map<string, number>();
+  groups.forEach((g, code) => {
+    if (g.vendors.size >= 2) medians.set(code, median(g.qtys));
+  });
+
+  return lines.map((l) => {
+    const med = l.matched_item_code ? medians.get(l.matched_item_code) : undefined;
+    if (med === undefined || med <= 0 || l.qty_norm === null) return l;
+    if (Math.abs(l.qty_norm - med) / med <= SCOPE_TOLERANCE) return l;
+    return { ...l, flags: [...l.flags, "scope_mismatch"] };
+  });
+}
