@@ -4,7 +4,7 @@
 
 @layer base {
   body {
-    @apply bg-[#eeece6] text-[#535a53] antialiased;
+    @apply bg-[#f3f4f3] text-[#4d5a5f] antialiased;
     font-family: Arial, Helvetica, sans-serif;
   }
 
@@ -21,23 +21,23 @@
   }
 
   .card {
-    @apply rounded-[2px] border border-[#d5d0c6] bg-[#faf9f5] p-5 shadow-none;
+    @apply rounded-[2px] border border-[#d7dcdd] bg-[#fdfdfc] p-5 shadow-none;
   }
 
   .eyebrow {
-    @apply text-[10px] font-bold uppercase tracking-[0.24em] text-[#9a713b];
+    @apply text-[10px] font-bold uppercase tracking-[0.24em] text-[#a7823a];
   }
 
   .field {
-    @apply w-full rounded-[2px] border border-[#cfc9bd] bg-[#fdfcf9] px-3 py-2.5 text-sm text-[#202a24] outline-none transition placeholder:text-[#9a9e96] focus:border-[#a9824b] focus:ring-2 focus:ring-[#e7d9c2];
+    @apply w-full rounded-[2px] border border-[#c7d0d2] bg-[#fdfdfc] px-3 py-2.5 text-sm text-[#31525e] outline-none transition placeholder:text-[#8d9a9f] focus:border-[#a7823a] focus:ring-2 focus:ring-[#f1e8d5];
   }
 
   .section-title {
-    @apply text-lg text-[#202a24];
+    @apply text-lg text-[#31525e];
   }
 
   .muted-label {
-    @apply text-[10px] font-bold uppercase tracking-[0.16em] text-[#7d837c];
+    @apply text-[10px] font-bold uppercase tracking-[0.16em] text-[#77868b];
   }
 }
 
@@ -47,8 +47,8 @@
   width: 34px;
   align-items: center;
   justify-content: center;
-  border: 1px solid #d8b474;
-  color: #d8b474;
+  border: 1px solid #d0b355;
+  color: #d0b355;
   font-family: Georgia, "Times New Roman", serif;
   font-size: 18px;
   line-height: 1;
@@ -58,28 +58,28 @@
   position: relative;
   overflow: hidden;
   min-height: 420px;
-  background-color: #202a24;
-  background-image: linear-gradient(90deg, rgba(32, 42, 36, 0.95) 0%, rgba(32, 42, 36, 0.72) 46%, rgba(32, 42, 36, 0.18) 100%), url("https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1800&q=85");
+  background-color: #31525e;
+  background-image: linear-gradient(90deg, rgba(49, 82, 94, 0.96) 0%, rgba(49, 82, 94, 0.74) 46%, rgba(49, 82, 94, 0.18) 100%), url("https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1800&q=85");
   background-position: center;
   background-size: cover;
 }
 
 .hero-rule { border-top: 1px solid rgba(216, 180, 116, 0.6); }
 
-body .bg-slate-950 { background-color: #202a24; }
-body .text-slate-950 { color: #202a24; }
-body .text-slate-900 { color: #2c352e; }
-body .text-slate-800 { color: #455047; }
-body .bg-slate-50 { background-color: #f5f2ec; }
-body .border-slate-200 { border-color: #d5d0c6; }
-body .border-slate-100 { border-color: #e3ded4; }
-body .bg-white { background-color: #faf9f5; }
-body .text-slate-500 { color: #747b73; }
-body .text-slate-400 { color: #949990; }
-body .text-slate-300 { color: #c3c9c1; }
-body .text-emerald-700 { color: #6c7d69; }
-body .text-emerald-800 { color: #536653; }
-body .bg-emerald-50 { background-color: #edf2ea; }
-body .bg-emerald-950 { background-color: #202a24; }
-body .text-emerald-50 { color: #f4f1e9; }
-body .text-emerald-100 { color: #d8ded5; }
+body .bg-slate-950 { background-color: #31525e; }
+body .text-slate-950 { color: #31525e; }
+body .text-slate-900 { color: #31525e; }
+body .text-slate-800 { color: #4d5a5f; }
+body .bg-slate-50 { background-color: #f5f6f5; }
+body .border-slate-200 { border-color: #d7dcdd; }
+body .border-slate-100 { border-color: #e5e8e8; }
+body .bg-white { background-color: #fdfdfc; }
+body .text-slate-500 { color: #728188; }
+body .text-slate-400 { color: #8d9a9f; }
+body .text-slate-300 { color: #d1dcdf; }
+body .text-emerald-700 { color: #587b70; }
+body .text-emerald-800 { color: #486a61; }
+body .bg-emerald-50 { background-color: #edf5f1; }
+body .bg-emerald-950 { background-color: #31525e; }
+body .text-emerald-50 { color: #f7f7f7; }
+body .text-emerald-100 { color: #d8e0e2; }
