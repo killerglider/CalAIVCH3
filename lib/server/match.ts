@@ -17,7 +17,15 @@ import type { ItemCandidate, ItemMatch, RequirementLine } from "@/lib/types";
 export const MAX_MATCH_LINES = 60;
 /** Oversample so that exact ERP repeats can be collapsed and still leave 6. */
 const RETRIEVAL_K = 12;
-const DUPLICATE_MIN_SIM = 0.55;
+/**
+ * Minimum trigram similarity for an ERP item to count as a duplicate of the
+ * best candidate. 0.55 pulled in different items ("OT FLOOR & WALL" for a toilet
+ * floor); genuine variants (WP.01, WP.01.A, WP.01.B) score about 0.93-0.97.
+ * Tune here.
+ */
+const DUPLICATE_MIN_SIM = 0.8;
+/** Hard cap on the cluster size; the RPC orders by score, so the closest are kept. */
+const DUPLICATE_MAX_ENTRIES = 8;
 
 const SYSTEM_PROMPT = `You map construction requirement lines to existing ERP item codes for an Indian construction company.
 
@@ -103,12 +111,15 @@ async function retrieve(line: RequirementLine): Promise<Retrieved> {
   const candidates = dedupeCandidates(
     await rpcRows("match_item_code", { query: line.description, k: RETRIEVAL_K }),
   );
+  // The RPC returns rows ordered by score descending, so the cap keeps the closest duplicates.
   const cluster = (
     await rpcRows("duplicate_candidates", {
       ref: candidates[0]?.description ?? line.description,
       min_sim: DUPLICATE_MIN_SIM,
     })
-  ).map(toCandidate);
+  )
+    .slice(0, DUPLICATE_MAX_ENTRIES)
+    .map(toCandidate);
   return { candidates, cluster };
 }
 
