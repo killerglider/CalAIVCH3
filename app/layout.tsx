@@ -32,7 +32,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
         </header>
         <div className="border-b border-[#d7dcdd] bg-[#f7f7f7]">
           <div className="mx-auto flex max-w-[1540px] gap-2 overflow-x-auto px-5 sm:px-8 lg:px-12">
-            {[{ href: "/intake", label: "Capture", step: "01" }, { href: "/match", label: "Catalogue", step: "02" }, { href: "/quotes", label: "Quotes", step: "03" }, { href: "/rfq", label: "RFQ draft", step: "04" }, { href: "/comparative", label: "Decision", step: "05" }, { href: "/pipeline", label: "Run demo", step: "06" }].map((item) => (
+            {[{ href: "/intake", label: "Capture", step: "01" }, { href: "/match", label: "Catalogue", step: "02" }, { href: "/rfq", label: "RFQ draft", step: "03" }, { href: "/quotes", label: "Quotes", step: "04" }, { href: "/comparative", label: "Decision", step: "05" }, { href: "/pipeline", label: "Run demo", step: "06" }].map((item) => (
               <Link key={item.href} href={item.href} className="group flex shrink-0 items-center gap-2 border-b border-transparent px-3 py-3.5 text-[10px] font-bold uppercase tracking-[0.18em] text-[#6e766d] transition hover:border-[#a9824b] hover:text-[#202a24]">
                 <span className="font-mono text-[9px] text-[#a9824b]">{item.step}</span>
                 {item.label}
