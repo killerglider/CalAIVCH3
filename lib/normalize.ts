@@ -7,6 +7,9 @@ export const SQFT_RATE_TO_SQM_RATE = 10.76391;
 export const SCOPE_TOLERANCE = 0.15;
 export const LOW_CONFIDENCE = 0.7;
 export const MIN_MATCH_SCORE = 0.3;
+export const MIN_RATE_COVERAGE = 0.4;
+/** Share of a vendor's lines that must be ocr_low_confidence for the quote to count as such. */
+export const OCR_QUOTE_SHARE = 0.5;
 export const UNKNOWN_VENDOR = "Unknown vendor";
 
 /** Flag vocabulary. "uom_unsupported" is an addition for non-area units. */
@@ -16,7 +19,8 @@ export type QuoteFlag =
   | "ocr_low_confidence"
   | "missing_rate"
   | "gst_extra"
-  | "uom_unsupported";
+  | "uom_unsupported"
+  | "needs_manual_review";
 
 /** One line exactly as printed on the quotation (model output, unconverted). */
 export interface RawQuoteLine {
@@ -274,4 +278,48 @@ export function flagScopeMismatch(lines: NormalizedQuoteLine[]): NormalizedQuote
       ? { ...l, flags: [...l.flags, "scope_mismatch"] }
       : l,
   );
+}
+
+/**
+ * Rate-reliability guard. Per vendor: rateCoverage = lines with a printed
+ * rate / total lines. If the quote is ocr_low_confidence (at least half of the
+ * vendor's lines carry that flag) AND rateCoverage < 0.4, its rates are treated
+ * as unreadable: every rate_original and unit_rate_norm is nulled and each line
+ * gets "needs_manual_review" (plus "missing_rate", since the rate is now null).
+ * Quantities are untouched. Use vendorsNeedingReview() to keep such vendors out
+ * of any ranking.
+ */
+export function applyRateReliabilityGuard(lines: NormalizedQuoteLine[]): NormalizedQuoteLine[] {
+  const byVendor = new Map<string, { total: number; withRate: number; lowOcr: number }>();
+  for (const l of lines) {
+    const s = byVendor.get(l.vendor) ?? { total: 0, withRate: 0, lowOcr: 0 };
+    s.total += 1;
+    if (l.rate_original !== null) s.withRate += 1;
+    if (l.flags.includes("ocr_low_confidence")) s.lowOcr += 1;
+    byVendor.set(l.vendor, s);
+  }
+
+  const unreadable = new Set<string>();
+  byVendor.forEach((s, vendor) => {
+    const rateCoverage = s.withRate / s.total;
+    const lowOcrQuote = s.lowOcr / s.total >= OCR_QUOTE_SHARE;
+    if (lowOcrQuote && rateCoverage < MIN_RATE_COVERAGE) unreadable.add(vendor);
+  });
+
+  return lines.map((l) => {
+    if (!unreadable.has(l.vendor)) return l;
+    const flags = [...l.flags];
+    if (!flags.includes("missing_rate")) flags.push("missing_rate");
+    if (!flags.includes("needs_manual_review")) flags.push("needs_manual_review");
+    return { ...l, rate_original: null, unit_rate_norm: null, flags };
+  });
+}
+
+/** Vendors with any needs_manual_review line: show them, but do not rank them. */
+export function vendorsNeedingReview(lines: NormalizedQuoteLine[]): Set<string> {
+  const out = new Set<string>();
+  for (const l of lines) {
+    if (l.flags.includes("needs_manual_review")) out.add(l.vendor);
+  }
+  return out;
 }

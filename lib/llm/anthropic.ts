@@ -70,6 +70,8 @@ export async function extractJSON<T>({
   const response = await anthropic.messages.create({
     model: MODEL,
     max_tokens: MAX_TOKENS,
+    // As deterministic as the model allows; extraction must not vary run to run.
+    temperature: 0,
     system,
     tools: [tool],
     tool_choice: { type: "tool", name: tool.name },

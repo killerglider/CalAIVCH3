@@ -4,6 +4,7 @@ import { extractJSON, readSamplePdfBase64 } from "@/lib/llm/anthropic";
 import { mockNormalizedQuoteLines } from "@/lib/mocks";
 import {
   acceptMatch,
+  applyRateReliabilityGuard,
   canonicalVendor,
   flagScopeMismatch,
   matchQueryFor,
@@ -248,7 +249,7 @@ export async function POST(req: Request): Promise<NextResponse<NormalizeResponse
       codes[i] ? { ...e.line, matched_item_code: codes[i] } : e.line,
     );
 
-    const lines = flagScopeMismatch(matched);
+    const lines = applyRateReliabilityGuard(flagScopeMismatch(matched));
     const persisted = await persistQuotes(lines, parsed.requirementId);
 
     return NextResponse.json(lines, { headers: { "X-Quotes-Persisted": String(persisted) } });
