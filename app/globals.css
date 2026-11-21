@@ -39,6 +39,46 @@
   .muted-label {
     @apply text-[10px] font-bold uppercase tracking-[0.16em] text-[#77868b];
   }
+
+  .luxury-panel {
+    @apply rounded-[2px] border border-[#cbd4d6] bg-[#fdfdfc];
+  }
+
+  .display-title {
+    @apply text-4xl leading-[1.02] text-[#31525e] sm:text-5xl;
+  }
+
+  .page-intro {
+    @apply relative mb-10 flex gap-5 border-b border-[#cbd4d6] pb-8 lg:gap-8;
+  }
+
+  .page-intro-index {
+    @apply flex h-10 w-10 shrink-0 items-center justify-center border border-[#a7823a] font-mono text-xs text-[#a7823a];
+  }
+
+  .page-intro-meta {
+    @apply hidden self-start border-l border-[#cbd4d6] pl-5 pt-1 text-right text-[10px] font-bold uppercase tracking-[0.18em] text-[#77868b] lg:block;
+  }
+
+  .gold-button {
+    @apply inline-flex items-center justify-center gap-3 rounded-[2px] bg-[#31525e] px-5 py-3 text-[10px] font-bold uppercase tracking-[0.18em] text-white transition hover:bg-[#263f49] disabled:opacity-50;
+  }
+
+  .tab-rail {
+    @apply flex gap-1 border-b border-[#d7dcdd] bg-[#f7f8f7] px-5;
+  }
+
+  .tab-rail button {
+    @apply border-b-2 border-transparent px-3 py-4 text-[10px] font-bold uppercase tracking-[0.16em] text-[#77868b] transition hover:text-[#31525e];
+  }
+
+  .tab-rail button.active {
+    @apply border-[#a7823a] text-[#31525e];
+  }
+
+  .data-rule {
+    @apply border-t border-[#e5e8e8];
+  }
 }
 
 .brand-mark {
