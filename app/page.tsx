@@ -1,63 +1,13 @@
 import Link from "next/link";
 
 const views = [
-  {
-    href: "/intake",
-    step: "01",
-    title: "Requirement intake",
-    description: "Form, WhatsApp, and voice requirement capture.",
-  },
-  {
-    href: "/match",
-    step: "02",
-    title: "Item-code match",
-    description: "Review likely catalogue matches and duplicate codes.",
-  },
-  {
-    href: "/quotes",
-    step: "03",
-    title: "Quote normalization",
-    description: "Inspect uploaded quotes converted to a common basis.",
-  },
-  {
-    href: "/comparative",
-    step: "04",
-    title: "Comparative statement",
-    description: "Compare rates, performance, and the mock recommendation.",
-  },
+  { href: "/comparative", step: "01", title: "Decision workspace", description: "Review the normalized rate matrix and HOD recommendation." },
+  { href: "/intake", step: "02", title: "Capture requirement", description: "Start with a site form, WhatsApp message, or voice note." },
+  { href: "/match", step: "03", title: "Match ERP codes", description: "See the closest item and duplicate code cluster." },
+  { href: "/quotes", step: "04", title: "Normalize quotes", description: "Bring vendor quantities and rates to a common SQM basis." },
+  { href: "/rfq", step: "05", title: "Draft RFQ", description: "Generate the request with Vinayak standard terms." },
 ];
 
 export default function DashboardPage() {
-  return (
-    <main className="page-shell">
-      <p className="eyebrow">Procure-to-recommend workflow</p>
-      <h1 className="mt-3 max-w-3xl text-4xl font-bold tracking-tight text-slate-950 sm:text-5xl">
-        A typed, mock-first procurement agent skeleton.
-      </h1>
-      <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">
-        Every view calls a Node.js API route and renders deterministic data. No
-        database connection or API key is required for this demo.
-      </p>
-
-      <div className="mt-10 grid gap-4 md:grid-cols-2">
-        {views.map((view) => (
-          <Link
-            key={view.href}
-            href={view.href}
-            className="card group transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md"
-          >
-            <span className="text-sm font-semibold text-emerald-700">
-              {view.step}
-            </span>
-            <h2 className="mt-5 text-xl font-semibold text-slate-950 group-hover:text-emerald-800">
-              {view.title} →
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              {view.description}
-            </p>
-          </Link>
-        ))}
-      </div>
-    </main>
-  );
+  return <main className="page-shell"><section className="grid gap-8 border-b border-slate-200 pb-10 lg:grid-cols-[1.15fr_0.85fr] lg:items-end"><div><p className="eyebrow">Vinayak Group / Procurement agent</p><h1 className="mt-4 max-w-3xl text-4xl font-bold tracking-tight text-slate-950 sm:text-6xl">From site request to a decision the HOD can trust.</h1><p className="mt-5 max-w-2xl text-base leading-7 text-slate-600">Normalize messy waterproofing quotes, expose duplicate ERP codes, and make the commercial trade-offs visible before a vendor is recommended.</p><Link href="/comparative" className="mt-7 inline-flex items-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800">Open comparative statement <span className="text-amber-400">→</span></Link></div><div className="rounded-xl bg-amber-100 p-6"><p className="muted-label text-amber-900">Live demo context</p><p className="mt-3 text-2xl font-semibold tracking-tight text-amber-950">Amara Tower-2</p><div className="mt-5 grid grid-cols-2 gap-4 border-t border-amber-200 pt-4"><div><p className="muted-label text-amber-800">Work package</p><p className="mt-1 text-sm font-medium text-amber-950">Waterproofing</p></div><div><p className="muted-label text-amber-800">Quotes</p><p className="mt-1 text-sm font-medium text-amber-950">4 vendors</p></div></div></div></section><section className="pt-10"><div className="mb-4 flex items-end justify-between"><div><p className="eyebrow">Workflow</p><h2 className="section-title mt-1 text-2xl">Procurement intelligence spine</h2></div><span className="text-xs text-slate-500">Mock API connected</span></div><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{views.map((view) => <Link key={view.href} href={view.href} className={`card group transition hover:-translate-y-0.5 hover:border-amber-300 hover:shadow-md ${view.step === "01" ? "border-amber-300 bg-slate-950 text-white" : ""}`}><span className={`font-mono text-xs ${view.step === "01" ? "text-amber-400" : "text-amber-700"}`}>{view.step}</span><h3 className={`mt-7 text-base font-semibold ${view.step === "01" ? "text-white" : "text-slate-950"}`}>{view.title} <span className="float-right transition group-hover:translate-x-1">→</span></h3><p className={`mt-2 text-xs leading-5 ${view.step === "01" ? "text-slate-300" : "text-slate-500"}`}>{view.description}</p></Link>)}</div></section></main>;
 }

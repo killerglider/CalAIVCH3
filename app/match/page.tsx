@@ -1,20 +1,13 @@
-import { ApiPreview } from "@/components/ApiPreview";
+"use client";
+
+import { useEffect, useState } from "react";
+import type { ItemMatch } from "@/lib/types";
+import { postJson } from "@/lib/api";
+import { ErrorState, LoadingState } from "@/components/LoadingState";
 
 export default function MatchPage() {
-  return (
-    <main className="page-shell">
-      <p className="eyebrow">Step 02</p>
-      <h1 className="mt-2 text-3xl font-bold text-slate-950">
-        Item-code match review
-      </h1>
-      <p className="mb-8 mt-3 max-w-2xl leading-7">
-        Placeholder for accepting a match, reviewing duplicate catalogue
-        entries, or suggesting a new code.
-      </p>
-      <div className="space-y-6">
-        <ApiPreview endpoint="/api/match" title="Candidate matches" />
-        <ApiPreview endpoint="/api/rfq" title="Draft RFQ" />
-      </div>
-    </main>
-  );
+  const [matches, setMatches] = useState<ItemMatch[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { postJson<ItemMatch[]>("/api/match").then(setMatches).catch((e: unknown) => setError(e instanceof Error ? e.message : "Unable to load item matches")); }, []);
+  return <main className="page-shell"><div className="mb-8"><p className="eyebrow">Catalogue intelligence / Step 02</p><h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Item-code match review</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">The agent finds the closest ERP code, keeps the alternatives visible, and calls out duplicate clusters for review.</p></div>{error ? <ErrorState message={error} /> : !matches ? <LoadingState label="Matching site requirements to ERP" /> : <div className="space-y-5">{matches.map((match) => <article key={match.requirement_line_id} className="card"><div className="flex flex-col justify-between gap-4 border-b border-slate-100 pb-5 lg:flex-row"><div><p className="muted-label">Site requirement</p><p className="mt-2 text-lg font-medium text-slate-950">{match.query_text}</p></div><div className="flex items-center gap-3 rounded-lg bg-emerald-50 px-4 py-3"><div><p className="muted-label text-emerald-700">Best match</p><p className="mt-1 font-mono text-sm font-bold text-emerald-900">{match.best.item_code}</p></div><span className="rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white">{Math.round(match.best.score * 100)}%</span></div></div><div className="grid gap-5 pt-5 lg:grid-cols-[1.2fr_0.8fr]"><div><div className="mb-3 flex items-center justify-between"><h2 className="section-title">Candidate codes</h2><span className="text-xs text-slate-400">Similarity score</span></div><div className="space-y-2">{match.candidates.map((candidate) => <div key={`${candidate.item_code}-${candidate.description}`} className={`flex items-center justify-between gap-4 rounded-lg border p-3 ${candidate.item_code === match.best.item_code ? "border-emerald-200 bg-emerald-50/50" : "border-slate-200"}`}><div><p className="font-mono text-xs font-bold text-slate-900">{candidate.item_code}</p><p className="mt-1 text-sm text-slate-600">{candidate.description}</p></div><span className="shrink-0 text-sm font-semibold text-slate-700">{Math.round(candidate.score * 100)}%</span></div>)}</div></div><div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4"><div className="flex items-start justify-between gap-3"><div><p className="muted-label text-amber-800">Duplicate cluster</p><h2 className="mt-1 font-semibold text-amber-950">These ERP codes look like duplicates</h2></div><span className="rounded-full bg-amber-400 px-2 py-1 text-[10px] font-black text-amber-950">REVIEW</span></div><div className="mt-4 space-y-2">{match.duplicate_cluster.map((candidate) => <div key={`${candidate.item_code}-${candidate.description}`} className="rounded-lg border border-amber-200/80 bg-white/70 p-3"><p className="font-mono text-xs font-bold text-slate-900">{candidate.item_code}</p><p className="mt-1 text-xs leading-5 text-slate-600">{candidate.description}</p></div>)}</div></div></div>{match.decision === "new_code_suggested" && <div className="mt-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">No safe existing match. Suggested new ERP code <span className="font-mono font-bold">{match.suggested_new_code ?? "-"}</span></div>}</article>)}</div>}</main>;
 }

@@ -1,17 +1,23 @@
-import { ApiPreview } from "@/components/ApiPreview";
+"use client";
+
+import { useState } from "react";
+import type { Requirement, RequirementSource } from "@/lib/types";
+import { postJson } from "@/lib/api";
+import { ErrorState } from "@/components/LoadingState";
+
+type Tab = "form" | "whatsapp" | "voice";
 
 export default function IntakePage() {
-  return (
-    <main className="page-shell">
-      <p className="eyebrow">Step 01</p>
-      <h1 className="mt-2 text-3xl font-bold text-slate-950">
-        Requirement intake
-      </h1>
-      <p className="mb-8 mt-3 max-w-2xl leading-7">
-        Placeholder for form entry, WhatsApp ingestion, and voice
-        transcription. The response below is the shared Requirement contract.
-      </p>
-      <ApiPreview endpoint="/api/intake" title="Captured requirement" />
-    </main>
-  );
+  const [tab, setTab] = useState<Tab>("form");
+  const [project, setProject] = useState("Amara Tower-2");
+  const [description, setDescription] = useState("Waterproofing at toilet floor");
+  const [qty, setQty] = useState("1247");
+  const [uom, setUom] = useState("SQM");
+  const [rawText, setRawText] = useState("Need waterproofing at toilet floor for Amara Tower-2. Quantity 1247 SQM. Please initiate RFQ.");
+  const [requirement, setRequirement] = useState<Requirement | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function submit(source: RequirementSource, body?: unknown) { setLoading(true); setError(null); try { setRequirement(await postJson<Requirement>("/api/intake", body)); } catch (e) { setError(e instanceof Error ? e.message : "Unable to capture requirement"); } finally { setLoading(false); } }
+  return <main className="page-shell"><div className="mb-8"><p className="eyebrow">Site request / Step 01</p><h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Requirement intake</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">Capture the request in the format the site team already uses. The parsed lines become the input to item-code matching.</p></div><div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]"><section className="card"><div className="flex gap-1 border-b border-slate-200"><button type="button" onClick={() => setTab("form")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${tab === "form" ? "border-amber-500 text-slate-950" : "border-transparent text-slate-400"}`}>Structured form</button><button type="button" onClick={() => setTab("whatsapp")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${tab === "whatsapp" ? "border-amber-500 text-slate-950" : "border-transparent text-slate-400"}`}>WhatsApp text</button><button type="button" onClick={() => setTab("voice")} className={`border-b-2 px-4 py-3 text-sm font-semibold ${tab === "voice" ? "border-amber-500 text-slate-950" : "border-transparent text-slate-400"}`}>Voice note</button></div>{tab === "form" && <form className="space-y-5 pt-6" onSubmit={(e) => { e.preventDefault(); void submit("form", { project, description, qty: Number(qty), uom }); }}><div><label className="muted-label" htmlFor="project">Project</label><input id="project" className="field mt-2" value={project} onChange={(e) => setProject(e.target.value)} /></div><div><label className="muted-label" htmlFor="description">Work requirement</label><textarea id="description" className="field mt-2 min-h-28 resize-y" value={description} onChange={(e) => setDescription(e.target.value)} /></div><div className="grid gap-4 sm:grid-cols-2"><div><label className="muted-label" htmlFor="qty">Quantity</label><input id="qty" className="field mt-2" type="number" value={qty} onChange={(e) => setQty(e.target.value)} /></div><div><label className="muted-label" htmlFor="uom">Unit</label><select id="uom" className="field mt-2" value={uom} onChange={(e) => setUom(e.target.value)}><option>SQM</option><option>RM</option><option>Nos</option></select></div></div><button disabled={loading} className="rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50">{loading ? "Parsing requirement..." : "Capture requirement"}</button></form>}{tab === "whatsapp" && <form className="space-y-5 pt-6" onSubmit={(e) => { e.preventDefault(); void submit("whatsapp", { text: rawText }); }}><div><label className="muted-label" htmlFor="whatsapp">Paste site message</label><textarea id="whatsapp" className="field mt-2 min-h-48 resize-y" value={rawText} onChange={(e) => setRawText(e.target.value)} /></div><div className="rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-500">The parser extracts project, quantities, units, and work descriptions from the message.</div><button disabled={loading} className="rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50">{loading ? "Parsing message..." : "Parse WhatsApp message"}</button></form>}{tab === "voice" && <form className="space-y-5 pt-6" onSubmit={(e) => { e.preventDefault(); const form = new FormData(e.currentTarget); void submit("voice", form); }}><div className="rounded-xl border-2 border-dashed border-slate-300 p-8 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-xl text-amber-700">◉</div><p className="mt-3 font-semibold text-slate-900">Upload a site voice note</p><p className="mt-1 text-xs text-slate-500">MP3, M4A, WAV up to 25 MB</p><input name="file" className="mt-5 block w-full text-sm text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-950 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white" type="file" accept="audio/*" /></div><button disabled={loading} className="rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50">{loading ? "Transcribing..." : "Transcribe and capture"}</button></form>}</section><aside className="space-y-5">{error && <ErrorState message={error} />}{requirement ? <section className="card"><div className="flex items-center justify-between"><p className="eyebrow">Parsed successfully</p><span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-bold uppercase text-emerald-800">{requirement.source}</span></div><h2 className="section-title mt-3">{requirement.project}</h2><p className="mt-1 text-xs text-slate-400">Captured {new Date(requirement.created_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</p><div className="mt-5 space-y-3">{requirement.lines.map((line) => <div key={line.id} className="rounded-lg border border-slate-200 p-3"><div className="flex justify-between gap-3"><p className="text-sm font-medium text-slate-900">{line.description}</p><span className="whitespace-nowrap text-sm font-semibold text-slate-700">{line.qty ?? "-"} {line.uom}</span></div>{line.wo_code && <p className="mt-2 font-mono text-xs text-amber-700">WO {line.wo_code}</p>}</div>)}</div></section> : <section className="rounded-xl border border-dashed border-slate-300 bg-white/60 p-5"><p className="muted-label">Next in workflow</p><p className="mt-2 text-sm font-semibold text-slate-900">Match each parsed line to the ERP catalogue</p><p className="mt-2 text-xs leading-5 text-slate-500">Duplicate variants and new-code suggestions appear in the next review screen.</p></section>}</aside></div></main>;
 }

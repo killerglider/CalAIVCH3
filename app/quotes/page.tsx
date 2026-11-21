@@ -1,17 +1,22 @@
-import { ApiPreview } from "@/components/ApiPreview";
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import type { NormalizedQuoteLine } from "@/lib/types";
+import { postJson } from "@/lib/api";
+import { ErrorState, LoadingState } from "@/components/LoadingState";
+
+const money = (value: number | null) => value == null ? "-" : `Rs ${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
 export default function QuotesPage() {
-  return (
-    <main className="page-shell">
-      <p className="eyebrow">Step 03</p>
-      <h1 className="mt-2 text-3xl font-bold text-slate-950">
-        Quote upload and normalization
-      </h1>
-      <p className="mb-8 mt-3 max-w-2xl leading-7">
-        Placeholder for PDF, spreadsheet, and image upload. The mock response
-        demonstrates unit conversion and scope-mismatch flags.
-      </p>
-      <ApiPreview endpoint="/api/normalize" title="Normalized quote cards" />
-    </main>
-  );
+  const [quotes, setQuotes] = useState<NormalizedQuoteLine[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { postJson<NormalizedQuoteLine[]>("/api/normalize").then(setQuotes).catch((e: unknown) => setError(e instanceof Error ? e.message : "Unable to load quotes")); }, []);
+  async function upload(file: File) { setUploading(true); setError(null); try { const form = new FormData(); form.append("file", file); setQuotes(await postJson<NormalizedQuoteLine[]>("/api/normalize", form)); } catch (e) { setError(e instanceof Error ? e.message : "Unable to normalize this file"); } finally { setUploading(false); } }
+
+  return <main className="page-shell"><div className="mb-8 flex flex-col justify-between gap-4 lg:flex-row lg:items-end"><div><p className="eyebrow">Commercial review / Step 04</p><h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Quote normalization</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">Four vendor layouts, one SQM basis. Review what was extracted before it enters the comparative statement.</p></div><button type="button" onClick={() => fileRef.current?.click()} className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"><span className="text-amber-400">+</span>{uploading ? "Normalizing..." : "Upload quote"}</button><input ref={fileRef} className="hidden" type="file" accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg" onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); }} /></div>
+    {error ? <ErrorState message={error} /> : !quotes ? <LoadingState label="Reading vendor quotes" /> : <div className="grid gap-5 xl:grid-cols-2">{quotes.map((quote) => <article key={`${quote.vendor}-${quote.source_file}`} className="card p-0"><div className="border-b border-slate-200 p-5"><div className="flex items-start justify-between gap-4"><div><p className="muted-label">{quote.source_file}</p><h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">{quote.vendor}</h2><p className="mt-1 text-sm text-slate-500">{quote.item_label} {quote.matched_item_code && <span className="font-mono text-xs text-amber-700">· {quote.matched_item_code}</span>}</p></div><div className="text-right"><p className="muted-label">Extraction confidence</p><p className="mt-1 text-xl font-bold text-slate-950">{Math.round(quote.confidence * 100)}%</p></div></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${quote.confidence >= .85 ? "bg-emerald-500" : "bg-amber-400"}`} style={{ width: `${quote.confidence * 100}%` }} /></div></div><div className="grid gap-4 p-5 sm:grid-cols-2"><div className="rounded-lg bg-slate-50 p-4"><p className="muted-label">Original quote</p><p className="mt-3 text-sm font-semibold text-slate-900">{quote.qty_original?.toLocaleString("en-IN") ?? "-"} {quote.uom_original}</p><p className="mt-1 text-xs text-slate-500">at {money(quote.rate_original)} / {quote.uom_original}</p></div><div className="rounded-lg border border-emerald-100 bg-emerald-50/50 p-4"><p className="muted-label text-emerald-700">Normalized basis</p><p className="mt-3 text-sm font-semibold text-slate-900">{quote.qty_norm?.toLocaleString("en-IN") ?? "-"} SQM</p><p className="mt-1 text-xs font-semibold text-emerald-700">{money(quote.unit_rate_norm)} / SQM</p></div></div><dl className="grid grid-cols-2 gap-x-5 gap-y-4 border-t border-slate-100 px-5 py-4 text-sm"><div><dt className="muted-label">GST</dt><dd className="mt-1 text-slate-800">{quote.gst_pct == null ? "-" : `${quote.gst_pct}%`}</dd></div><div><dt className="muted-label">Freight</dt><dd className="mt-1 text-slate-800">{money(quote.freight)}</dd></div><div><dt className="muted-label">Payment</dt><dd className="mt-1 leading-5 text-slate-800">{quote.payment_terms ?? "-"}</dd></div><div><dt className="muted-label">Delivery</dt><dd className="mt-1 text-slate-800">{quote.delivery_days == null ? "-" : `${quote.delivery_days} days`}</dd></div></dl><div className="flex flex-wrap gap-2 border-t border-slate-100 px-5 py-4">{quote.flags.length ? quote.flags.map((flag) => <span key={flag} className={`rounded px-2 py-1 text-[11px] font-bold ${flag === "scope_mismatch" ? "bg-amber-100 text-amber-900" : "bg-slate-100 text-slate-600"}`}>{flag === "scope_mismatch" ? "! Scope mismatch" : flag.replaceAll("_", " ")}</span>) : <span className="text-xs text-slate-400">No review flags</span>}</div></article>)}</div>}
+  </main>;
 }
