@@ -20,7 +20,21 @@ export const REWORK_PENALTY_PER_JOB = 10;
 
 /** Used when a vendor has no row in vinayak.vendors. */
 export const DEFAULT_PERFORMANCE_SCORE = 50;
+
+/**
+ * Coverage gate for rate ranking. A vendor gets a real rate_index only if it has
+ * usable rates on at least this share of the contested items AND on at least
+ * MIN_CONTESTED_ITEMS of them. Below that its rates are too thin to rank on
+ * (e.g. a mostly unreadable scan with one fluke rate).
+ */
+export const MIN_CONTESTED_COVERAGE = 0.5;
+export const MIN_CONTESTED_ITEMS = 2;
 // ---------------------------------------------------------------------------
+
+/** Does a vendor that priced `priced` of `contested` contested items pass the gate? */
+export function meetsCoverage(priced: number, contested: number): boolean {
+  return priced >= MIN_CONTESTED_ITEMS && contested > 0 && priced / contested >= MIN_CONTESTED_COVERAGE;
+}
 
 type VendorSummary = ComparativeStatement["vendor_summary"][number];
 type StatementItem = ComparativeStatement["items"][number];
@@ -94,6 +108,8 @@ interface VendorStats {
   hasUsableRate: boolean;
   scopeItems: number;
   needsReview: boolean;
+  /** Priced some contested items but failed the coverage gate (see MIN_CONTESTED_COVERAGE). */
+  insufficient: boolean;
 }
 
 /**
@@ -112,6 +128,7 @@ export function isUsableLine(l: NormalizedQuoteLine): boolean {
 
 function vendorNotes(s: VendorStats, record: Vendor | undefined): string {
   if (s.needsReview) return "scanned quote, flagged for manual review, not rate-ranked";
+  if (s.insufficient) return "insufficient priced items, flagged for manual review";
 
   if (s.rateIndex === null && s.hasUsableRate) {
     // Priced something, but nobody else priced it: nothing to compare against.
@@ -139,9 +156,15 @@ function vendorNotes(s: VendorStats, record: Vendor | undefined): string {
  * round(minRate / theirRate * 100); a vendor's rate_index is the mean of its
  * per-item indices over the contested items it priced usably.
  *
- * A vendor with no contested item (an unreadable scan, or no overlap with the
- * others) gets rate_index 0 and score = PERFORMANCE_WEIGHT * performance_score,
- * and is sorted after every rate-ranked vendor. All summary fields stay numbers.
+ * Coverage gate: a vendor is rate-ranked only if it priced at least
+ * MIN_CONTESTED_ITEMS contested items AND at least MIN_CONTESTED_COVERAGE of them.
+ * A vendor that fails is dropped from the benchmark too, so a few fluke rates
+ * cannot set the cheapest rate for others.
+ *
+ * A vendor that is not rate-ranked (an unreadable scan, no overlap with the
+ * others, or failing the coverage gate) gets rate_index 0 and
+ * score = PERFORMANCE_WEIGHT * performance_score, and is sorted after every
+ * rate-ranked vendor. All summary fields stay numbers.
  */
 export function buildComparativeStatement(params: {
   requirementId: string;
@@ -174,18 +197,43 @@ export function buildComparativeStatement(params: {
     });
   }
 
-  const indicesByVendor = new Map<string, number[]>();
-  rateByCode.forEach((rates) => {
-    // Only CONTESTED items count: a sole quoter has nobody to be cheaper than,
-    // so it must not collect a free 100.
-    if (rates.size < 2) return;
-    const minRate = Math.min(...Array.from(rates.values()));
-    rates.forEach((rate, vendor) => {
-      const list = indicesByVendor.get(vendor) ?? [];
-      list.push(Math.round((minRate / rate) * 100));
-      indicesByVendor.set(vendor, list);
+  /**
+   * Per-vendor item indices over CONTESTED items, ignoring `excluded` vendors.
+   * Only contested items count: a sole quoter has nobody to be cheaper than, so
+   * it must not collect a free 100.
+   */
+  const computeIndices = (excluded: Set<string>) => {
+    const indices = new Map<string, number[]>();
+    let contested = 0;
+    rateByCode.forEach((rates) => {
+      const active = Array.from(rates.entries()).filter(([vendor]) => !excluded.has(vendor));
+      if (active.length < 2) return;
+      contested++;
+      const minRate = Math.min(...active.map(([, rate]) => rate));
+      for (const [vendor, rate] of active) {
+        const list = indices.get(vendor) ?? [];
+        list.push(Math.round((minRate / rate) * 100));
+        indices.set(vendor, list);
+      }
     });
-  });
+    return { indices, contested };
+  };
+
+  // Coverage gate: a vendor is rate-ranked only if it priced enough of the contested
+  // items. A failing vendor is also removed from the benchmark (it must not set the
+  // cheapest rate on an item through a fluke), which can change what is contested,
+  // so repeat until nobody new fails. The excluded set only grows, so this ends.
+  const insufficient = new Set<string>();
+  let indicesByVendor = new Map<string, number[]>();
+  for (;;) {
+    const current = computeIndices(insufficient);
+    indicesByVendor = current.indices;
+    const failing = Array.from(current.indices.entries())
+      .filter(([, idx]) => !meetsCoverage(idx.length, current.contested))
+      .map(([vendor]) => vendor);
+    if (failing.length === 0) break;
+    failing.forEach((v) => insufficient.add(v));
+  }
 
   // ---- vendor stats ----
   const byVendor = new Map<string, NormalizedQuoteLine[]>();
@@ -210,6 +258,7 @@ export function buildComparativeStatement(params: {
       hasUsableRate: Array.from(rateByCode.values()).some((rates) => rates.has(vendor)),
       scopeItems: scopeKeys.size,
       needsReview: reviewVendors.has(vendor),
+      insufficient: insufficient.has(vendor),
     };
   });
 
